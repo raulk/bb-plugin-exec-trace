@@ -7,6 +7,8 @@ export interface Span {
   tsSec?: number;
   /** Normalized epoch milliseconds for timeline rendering. */
   tMs?: number;
+  /** Measured duration in whole milliseconds, when the shim observed completion. */
+  durMs?: number;
   file?: string;
   cmd?: string;
   path?: string;
@@ -19,6 +21,8 @@ export interface OpRow {
   runtime: string;
   count: number;
   sample: string;
+  /** Sum of measured durations; spans without a completion observation contribute 0. */
+  totalMs: number;
 }
 
 export interface SpanView {
@@ -27,6 +31,7 @@ export interface SpanView {
   op: string;
   label: string;
   pid: number;
+  durMs: number | null;
 }
 
 export interface ProcessRow {
@@ -54,6 +59,11 @@ export const MAX_RECENT = 500;
 
 function parseTsNs(v: unknown): number | undefined {
   if (typeof v === "number" && Number.isFinite(v)) return v;
+  return undefined;
+}
+
+function parseDurMs(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return Math.round(v);
   return undefined;
 }
 
@@ -96,6 +106,7 @@ export function parseLine(line: string): Span | null {
       path: typeof r.path === "string" ? r.path.slice(0, 300) : undefined,
       op: typeof r.op === "string" ? r.op : undefined,
       thread: typeof r.thread === "string" ? r.thread : undefined,
+      durMs: parseDurMs(r.durMs),
     };
   } catch {
     return null;
@@ -128,7 +139,7 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
     fileRows.push({ file: f.name, lines: n });
   }
   const byRt = new Map<string, number>();
-  const byOp = new Map<string, { count: number; example: string; rt: string }>();
+  const byOp = new Map<string, { count: number; example: string; rt: string; totalMs: number }>();
   const byProc = new Map<string, { rt: string; pid: number; count: number }>();
   for (const s of spans) {
     const pk = `${s.rt}:${s.pid}`;
@@ -139,20 +150,33 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
     const k = classify(s);
     const e = byOp.get(k);
     const ex = s.cmd ?? s.path ?? s.op ?? s.ev;
-    if (!e) byOp.set(k, { count: 1, example: ex, rt: s.rt });
+    if (!e) byOp.set(k, { count: 1, example: ex, rt: s.rt, totalMs: s.durMs ?? 0 });
     else {
       e.count++;
+      e.totalMs += s.durMs ?? 0;
       if (e.example.length < 10 && ex.length > 10) e.example = ex;
     }
   }
   const timed = spans.filter((s) => s.tMs !== undefined) as (Span & { tMs: number })[];
   timed.sort((a, b) => a.tMs - b.tMs);
+  // Bash xtrace logs command starts only: a command's duration is the gap to
+  // the next command in the same process. Python/Node report their own durMs.
+  const nextByPid = new Map<number, Span & { tMs: number }>();
+  for (let i = timed.length - 1; i >= 0; i--) {
+    const s = timed[i];
+    if (s.rt === "bash" && s.durMs === undefined) {
+      const nxt = nextByPid.get(s.pid);
+      if (nxt !== undefined && nxt.tMs >= s.tMs) s.durMs = Math.round(nxt.tMs - s.tMs);
+    }
+    nextByPid.set(s.pid, s);
+  }
   const recent = timed.slice(-MAX_RECENT).map((s) => ({
     tMs: s.tMs,
     rt: s.rt,
     op: classify(s),
     label: (s.cmd ?? s.path ?? s.op ?? s.ev).slice(0, 120),
     pid: s.pid,
+    durMs: s.durMs ?? null,
   }));
   return {
     totalSpans: spans.length,
@@ -160,7 +184,7 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
       .map(([runtime, count]) => ({ runtime, count }))
       .sort((a, b) => b.count - a.count),
     byOp: [...byOp.entries()]
-      .map(([op, v]) => ({ op, runtime: v.rt, count: v.count, sample: v.example }))
+      .map(([op, v]) => ({ op, runtime: v.rt, count: v.count, sample: v.example, totalMs: v.totalMs }))
       .sort((a, b) => b.count - a.count),
     files: fileRows,
     processes: [...byProc.values()].sort((a, b) => b.count - a.count),
@@ -168,7 +192,7 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
     endMs: timed.length > 0 ? timed[timed.length - 1].tMs : null,
     recent,
     notes: [
-      "Bash commands render as bars spanning to the next command in the same process; python/node markers are point events.",
+      "Durations: python/node subprocesses timed from spawn to exit; bash from one command's start to the next in the same process.",
       "python -S bypasses sitecustomize: outer tool time still measured, inner spans absent (by design).",
     ],
   };

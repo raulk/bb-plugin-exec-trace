@@ -65,17 +65,35 @@ function patchChild() {
   for (const m of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
     const orig = cp[m];
     if (typeof orig !== 'function' || orig.__bb_traced) continue;
+    const SYNC = m === 'spawnSync' || m === 'execSync' || m === 'execFileSync';
     const w = function (...a) {
+      let cmd = '';
       try {
-        let cmd = '';
         if (m === 'spawn' || m === 'spawnSync' || m === 'execFile' || m === 'execFileSync' || m === 'fork') cmd = Array.isArray(a[0]) ? a[0].join(' ') : String(a[0] ?? '');
         else cmd = String(a[0] ?? '');
         // re-inject env into options arg
         const last = a[a.length - 1];
         if (last && typeof last === 'object' && !Array.isArray(last)) last.env = reinject(last.env || Object.assign({}, process.env));
-        emit('proc.spawn', { op: m, cmd: trunc(cmd, 2000) });
       } catch {}
-      return orig.apply(this, a);
+      const t0 = Date.now();
+      try { emit('proc.spawn', { op: m, cmd: trunc(cmd, 2000) }); } catch {}
+      let r;
+      try {
+        r = orig.apply(this, a);
+      } catch (e) {
+        try { emit('proc.done', { op: m, cmd: trunc(cmd, 2000), durMs: Date.now() - t0, error: trunc(String(e && e.message || e), 200) }); } catch {}
+        throw e;
+      }
+      if (SYNC) {
+        try { emit('proc.done', { op: m, cmd: trunc(cmd, 2000), durMs: Date.now() - t0 }); } catch {}
+        return r;
+      }
+      try {
+        if (r && typeof r.once === 'function') {
+          r.once('exit', () => { try { emit('proc.done', { op: m, cmd: trunc(cmd, 2000), durMs: Date.now() - t0 }); } catch {} });
+        }
+      } catch {}
+      return r;
     };
     w.__bb_traced = true;
     cp[m] = w;

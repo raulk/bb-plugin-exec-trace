@@ -9,6 +9,7 @@ const opRow = z.object({
   runtime: z.string(),
   count: z.number(),
   sample: z.string(),
+  totalMs: z.number(),
 });
 
 const procRow = z.object({
@@ -23,6 +24,7 @@ const spanView = z.object({
   op: z.string(),
   label: z.string(),
   pid: z.number(),
+  durMs: z.number().nullable(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -92,12 +94,13 @@ export default async function plugin(bb: BbPluginApi) {
       const dir = di >= 0 ? argv[di + 1] : undefined;
       const p = profile(dir);
       if (json) return { exitCode: 0, stdout: JSON.stringify(p, null, 2) };
-      const max = p.byOp.reduce((m, r) => Math.max(m, r.count), 1);
+      const max = p.byOp.reduce((m, r) => Math.max(m, r.totalMs), 1);
+      const fmt = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`);
       const lines = [
         `trace dir: ${p.dir} — ${p.totalSpans} spans`,
         ...p.byOp.map(
           (r) =>
-            `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  ${"█".repeat(Math.max(1, Math.round((r.count / max) * 16)))}  ${r.sample}`,
+            `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  ${fmt(r.totalMs).padStart(7)}  ${"█".repeat(Math.max(r.totalMs > 0 ? 1 : 0, Math.round((r.totalMs / max) * 16)))}  ${r.sample}`,
         ),
         `processes: ${p.processes.map((q) => `${q.rt}·${q.pid} (${q.count})`).join(", ") || "—"}`,
       ];

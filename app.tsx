@@ -8,18 +8,23 @@ interface SpanView {
   op: string;
   label: string;
   pid: number;
+  durMs: number | null;
 }
 
 interface ProfileData {
   dir: string;
   totalSpans: number;
   byRuntime: { runtime: string; count: number }[];
-  byOp: { op: string; runtime: string; count: number; sample: string }[];
+  byOp: { op: string; runtime: string; count: number; sample: string; totalMs: number }[];
   processes: { rt: string; pid: number; count: number }[];
   startMs: number | null;
   endMs: number | null;
   recent: SpanView[];
   notes: string[];
+}
+
+function fmtMs(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
 function colorFor(op: string): string {
@@ -80,17 +85,28 @@ function Timeline({ recent, startMs, endMs }: { recent: SpanView[]; startMs: num
               const t = s.tMs ?? startMs;
               if (s.op === "bash:command") {
                 const next = arr[j + 1];
-                const x2 = x(next && next.tMs !== null ? next.tMs : endMs);
+                const end = s.durMs !== null ? t + s.durMs : (next && next.tMs !== null ? next.tMs : endMs);
+                const x2 = x(end);
                 return (
-                  <rect key={j} x={x(t)} y={y + 5} width={Math.max(3, x2 - x(t))} height={12} rx={3} fill={colorFor(s.op)} opacity={0.85}>
-                    <title>{s.label}</title>
-                  </rect>
+                  <g key={j}>
+                    <rect x={x(t)} y={y + 5} width={Math.max(3, x2 - x(t))} height={12} rx={3} fill={colorFor(s.op)} opacity={0.85}>
+                      <title>{s.durMs !== null ? `${s.label} — ${fmtMs(s.durMs)}` : s.label}</title>
+                    </rect>
+                    {s.durMs !== null && x2 - x(t) > 34 ? (
+                      <text x={x(t) + 4} y={y + 14} fontSize={9} fill="#fff">{fmtMs(s.durMs)}</text>
+                    ) : null}
+                  </g>
                 );
               }
               return (
-                <circle key={j} cx={x(t)} cy={y + 11} r={4} fill={colorFor(s.op)}>
-                  <title>{s.label}</title>
-                </circle>
+                <g key={j}>
+                  <circle cx={x(t)} cy={y + 11} r={4} fill={colorFor(s.op)}>
+                    <title>{s.durMs !== null ? `${s.label} — ${fmtMs(s.durMs)}` : s.label}</title>
+                  </circle>
+                  {s.op.endsWith(":subprocess") && s.durMs !== null ? (
+                    <text x={x(t) + 7} y={y + 14} fontSize={9} fill="currentColor" opacity={0.65}>{fmtMs(s.durMs)}</text>
+                  ) : null}
+                </g>
               );
             })}
           </g>
@@ -116,7 +132,8 @@ function ProfilerPage() {
     );
   }, [rpc]);
 
-  const max = data?.byOp.reduce((m, r) => Math.max(m, r.count), 1) ?? 1;
+  const maxCount = data?.byOp.reduce((m, r) => Math.max(m, r.count), 1) ?? 1;
+  const maxMs = data?.byOp.reduce((m, r) => Math.max(m, r.totalMs), 0) ?? 0;
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-y-auto">
@@ -152,12 +169,12 @@ function ProfilerPage() {
                   <div key={r.op} title={r.sample}>
                     <div className="flex items-baseline justify-between text-xs">
                       <span className="font-mono">{r.op}</span>
-                      <span className="text-muted-foreground">{r.count}</span>
+                      <span className="text-muted-foreground">{r.count} · {fmtMs(r.totalMs)}</span>
                     </div>
                     <div className="mt-0.5 h-2 overflow-hidden rounded bg-muted">
                       <div
                         className="h-full rounded"
-                        style={{ width: `${Math.max(2, (r.count / max) * 100)}%`, background: colorFor(r.op) }}
+                        style={{ width: `${maxMs > 0 ? Math.max(r.totalMs > 0 ? 2 : 0, (r.totalMs / maxMs) * 100) : Math.max(2, (r.count / maxCount) * 100)}%`, background: colorFor(r.op) }}
                       />
                     </div>
                     <div className="truncate font-mono text-[11px] text-muted-foreground">{r.sample}</div>

@@ -113,8 +113,33 @@ def _wrap_subprocess():
                 cmd_s = " ".join(str(c) for c in cmd)
             else:
                 cmd_s = str(cmd)
+            self._bb_cmd = cmd_s
+            self._bb_start = time.time_ns()
+            self._bb_done = False
             _emit("proc.spawn", cmd=_trunc(cmd_s, _TRUNC_CMD))
             super().__init__(*a, **k)
+
+        def _bb_finish(self):
+            if self._bb_done:
+                return
+            self._bb_done = True
+            try:
+                dur = (time.time_ns() - self._bb_start) // 1_000_000
+            except Exception:
+                dur = 0
+            _emit("proc.done", cmd=_trunc(self._bb_cmd, _TRUNC_CMD), durMs=dur)
+
+        def wait(self, *a, **k):
+            try:
+                return super().wait(*a, **k)
+            finally:
+                self._bb_finish()
+
+        def communicate(self, *a, **k):
+            try:
+                return super().communicate(*a, **k)
+            finally:
+                self._bb_finish()
 
     _TracedPopen._bb_traced = True
     sp.Popen = _TracedPopen  # type: ignore
@@ -129,8 +154,15 @@ def _wrap_os_system():
         return
 
     def _traced(cmd):
-        _emit("proc.system", cmd=_trunc(cmd, _TRUNC_CMD))
-        return _orig(cmd)
+        t0 = time.time_ns()
+        try:
+            return _orig(cmd)
+        finally:
+            try:
+                dur = (time.time_ns() - t0) // 1_000_000
+            except Exception:
+                dur = 0
+            _emit("proc.system", cmd=_trunc(cmd, _TRUNC_CMD), durMs=dur)
 
     _traced._bb_traced = True  # type: ignore
     os.system = _traced  # type: ignore
