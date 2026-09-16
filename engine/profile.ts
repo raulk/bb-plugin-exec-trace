@@ -116,7 +116,7 @@ export function parseLine(line: string): Span | null {
 export function classify(s: Span): string {
   if (s.rt === "bash") return "bash:command";
   if (s.ev === "proc.start") return `${s.rt}:start`;
-  if (s.ev === "proc.spawn" || s.ev === "proc.popen" || s.ev === "proc.system" || s.ev === "proc.exec")
+  if (s.ev === "proc.spawn" || s.ev === "proc.popen" || s.ev === "proc.system" || s.ev === "proc.exec" || s.ev === "proc.done")
     return `${s.rt}:subprocess`;
   if (s.ev.startsWith("file.")) return `${s.rt}:file-io`;
   if (s.ev.startsWith("net.")) return `${s.rt}:network`;
