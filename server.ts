@@ -11,6 +11,20 @@ const opRow = z.object({
   sample: z.string(),
 });
 
+const procRow = z.object({
+  rt: z.string(),
+  pid: z.number(),
+  count: z.number(),
+});
+
+const spanView = z.object({
+  tMs: z.number().nullable(),
+  rt: z.string(),
+  op: z.string(),
+  label: z.string(),
+  pid: z.number(),
+});
+
 export const rpcContract = defineRpcContract({
   profile: {
     input: z.object({ dir: z.string().optional() }).strict(),
@@ -19,7 +33,10 @@ export const rpcContract = defineRpcContract({
       totalSpans: z.number(),
       byRuntime: z.array(z.object({ runtime: z.string(), count: z.number() })),
       byOp: z.array(opRow),
-      files: z.array(z.object({ file: z.string(), lines: z.number() })),
+      processes: z.array(procRow),
+      startMs: z.number().nullable(),
+      endMs: z.number().nullable(),
+      recent: z.array(spanView),
       notes: z.array(z.string()),
     }),
   },
@@ -42,27 +59,21 @@ function loadDir(dir: string) {
 export default async function plugin(bb: BbPluginApi) {
   bb.log.info("exec-trace loaded");
 
-  bb.settings.define({
-    traceDir: {
-      type: "string",
-      label: "Trace spool directory",
-      default: "/tmp/exec-trace-verify",
-    },
-  });
-  const settings = bb.settings.define({
-    traceDirDefault: {
-      type: "string",
-      label: "Default trace dir",
-      default: "/tmp/exec-trace-verify",
-    },
-  });
-  void settings;
-
   function profile(dir?: string) {
     const d = dir ?? process.env.BB_TRACE_DIR ?? "/tmp/exec-trace-verify";
     const { files } = loadDir(d);
     const s = summarize(files);
-    return { dir: d, ...s };
+    return {
+      dir: d,
+      totalSpans: s.totalSpans,
+      byRuntime: s.byRuntime,
+      byOp: s.byOp,
+      processes: s.processes,
+      startMs: s.startMs,
+      endMs: s.endMs,
+      recent: s.recent,
+      notes: s.notes,
+    };
   }
 
   bb.rpc.register(rpcContract, {
@@ -81,9 +92,14 @@ export default async function plugin(bb: BbPluginApi) {
       const dir = di >= 0 ? argv[di + 1] : undefined;
       const p = profile(dir);
       if (json) return { exitCode: 0, stdout: JSON.stringify(p, null, 2) };
+      const max = p.byOp.reduce((m, r) => Math.max(m, r.count), 1);
       const lines = [
         `trace dir: ${p.dir} — ${p.totalSpans} spans`,
-        ...p.byOp.map((r) => `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  ${r.sample}`),
+        ...p.byOp.map(
+          (r) =>
+            `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  ${"█".repeat(Math.max(1, Math.round((r.count / max) * 16)))}  ${r.sample}`,
+        ),
+        `processes: ${p.processes.map((q) => `${q.rt}·${q.pid} (${q.count})`).join(", ") || "—"}`,
       ];
       return { exitCode: 0, stdout: lines.join("\n") };
     },
@@ -91,8 +107,6 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Transparent tracing env for every provider turn. Shim files ship in
   // shim/ and are deployed per-host by the host entry (host.ts).
-  // Kept minimal here so `bb plugin build` passes without a host bundle;
-  // full per-host deploy follows once the breakdown is verified.
   try {
     const providers = await bb.sdk.providers.list();
     for (const p of providers as { id: string }[]) {

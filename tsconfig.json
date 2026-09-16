@@ -18,11 +18,13 @@
       ]
     },
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": false
   },
   "include": [
     "server.ts",
     "app.tsx",
+    "engine",
     "components",
     "lib",
     "hooks"
