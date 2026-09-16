@@ -43,7 +43,7 @@ function ProfilerPage() {
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th className="px-3 py-2">Operation</th>
                   <th className="px-3 py-2">Count</th>
-                  <th className="px-3 py-2">Sample command</th>
+                  <th className="px-3 py-2">Command</th>
                 </tr>
               </thead>
               <tbody>
