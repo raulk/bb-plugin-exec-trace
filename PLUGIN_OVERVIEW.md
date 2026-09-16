@@ -1,21 +1,11 @@
-Keep a todo list beside the work it belongs to, in the sidebar and in
-your agent threads.
+# Exec profiler
 
-## What you get
+See what agent scripts actually do: subprocesses launched and files opened
+inside Python, Bash, and Node — attributed per operation type with no model
+opt-in.
 
-- An **Example todos** page in the left sidebar that adds, completes, and
-  removes todos.
-- A `bb exec-trace` command that does the same from a terminal.
-- Live updates, so a change made in one place reaches every open page at once.
-
-## How it works
-
-The todos live in this plugin's own storage on the BB server, one list per
-installation. Nothing leaves the machine, and the plugin needs no account, API
-key, or external service.
-
-## For agents
-
-The bundled skill tells an agent to read the list with `bb exec-trace list`, add
-one todo at a time with `bb exec-trace add`, and close finished work with
-`bb exec-trace done`.
+BB records the outer tool call; this plugin instruments the runtimes
+transparently (`PYTHONPATH` sitecustomize with `sys.addaudithook`,
+`BASH_ENV` xtrace, `NODE_OPTIONS` preload) and attributes inner spans to the
+outer call by thread + time overlap. Anything it can't observe (containers,
+`python -S`, remote shells) stays in an explicit opaque bucket — never guessed.
