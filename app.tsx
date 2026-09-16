@@ -43,7 +43,7 @@ function ProfilerPage() {
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th className="px-3 py-2">Operation</th>
                   <th className="px-3 py-2">Count</th>
-                  <th className="px-3 py-2">Example</th>
+                  <th className="px-3 py-2">Sample command</th>
                 </tr>
               </thead>
               <tbody>
@@ -51,7 +51,7 @@ function ProfilerPage() {
                   <tr key={r.op} className="border-b border-border last:border-0">
                     <td className="px-3 py-2 font-mono text-xs">{r.op}</td>
                     <td className="px-3 py-2">{r.count}</td>
-                    <td className="max-w-0 truncate px-3 py-2 font-mono text-xs text-muted-foreground">{r.example}</td>
+                    <td className="max-w-0 truncate px-3 py-2 font-mono text-xs text-muted-foreground">{r.sample}</td>
                   </tr>
                 ))}
               </tbody>

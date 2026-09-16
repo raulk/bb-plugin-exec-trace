@@ -15,7 +15,7 @@ export interface OpRow {
   op: string;
   runtime: string;
   count: number;
-  example: string;
+  sample: string;
 }
 
 export interface ProfileSummary {
@@ -99,16 +99,16 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
     fileRows.push({ file: f.name, lines: n });
   }
   const byRt = new Map<string, number>();
-  const byOp = new Map<string, { count: number; example: string; rt: string }>();
+  const byOp = new Map<string, { count: number; sample: string; rt: string }>();
   for (const s of spans) {
     byRt.set(s.rt, (byRt.get(s.rt) ?? 0) + 1);
     const k = classify(s);
     const e = byOp.get(k);
     const ex = s.cmd ?? s.path ?? s.op ?? s.ev;
-    if (!e) byOp.set(k, { count: 1, example: ex, rt: s.rt });
+    if (!e) byOp.set(k, { count: 1, sample: ex, rt: s.rt });
     else {
       e.count++;
-      if (e.example.length < 10 && ex.length > 10) e.example = ex;
+      if (e.sample.length < 10 && ex.length > 10) e.sample = ex;
     }
   }
   return {
@@ -117,7 +117,7 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
       .map(([runtime, count]) => ({ runtime, count }))
       .sort((a, b) => b.count - a.count),
     byOp: [...byOp.entries()]
-      .map(([op, v]) => ({ op, runtime: v.rt, count: v.count, example: v.example }))
+      .map(([op, v]) => ({ op, runtime: v.rt, count: v.count, sample: v.sample }))
       .sort((a, b) => b.count - a.count),
     files: fileRows,
     notes: [

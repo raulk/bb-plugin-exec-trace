@@ -8,7 +8,7 @@ const opRow = z.object({
   op: z.string(),
   runtime: z.string(),
   count: z.number(),
-  example: z.string(),
+  sample: z.string(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -83,7 +83,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (json) return { exitCode: 0, stdout: JSON.stringify(p, null, 2) };
       const lines = [
         `trace dir: ${p.dir} — ${p.totalSpans} spans`,
-        ...p.byOp.map((r) => `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  ex: ${r.example}`),
+        ...p.byOp.map((r) => `${r.op.padEnd(20)} ${String(r.count).padStart(3)}  sample: ${r.sample}`),
       ];
       return { exitCode: 0, stdout: lines.join("\n") };
     },

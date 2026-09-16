@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Exec Trace",
-    "description": "A BB plugin with an example todo list.",
+    "description": "Transparent profiler for Python, Bash, and Node subprocesses and file I/O.",
     "branding": {
       "icon": "ListTodo"
     },
