@@ -141,6 +141,21 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
   const byRt = new Map<string, number>();
   const byOp = new Map<string, { count: number; example: string; rt: string; totalMs: number }>();
   const byProc = new Map<string, { rt: string; pid: number; count: number }>();
+  // Bash xtrace logs command starts only: a command's duration is the gap to
+  // the next command in the same process. Assign first so totals include them.
+  // Python/Node report their own durMs.
+  const ordered = spans
+    .filter((s) => s.tMs !== undefined)
+    .sort((a, b) => (a.tMs as number) - (b.tMs as number));
+  const nextByPid = new Map<number, Span>();
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const s = ordered[i];
+    if (s.rt === "bash" && s.durMs === undefined && s.tMs !== undefined) {
+      const nxt = nextByPid.get(s.pid);
+      if (nxt?.tMs !== undefined && nxt.tMs >= s.tMs) s.durMs = Math.round(nxt.tMs - s.tMs);
+    }
+    nextByPid.set(s.pid, s);
+  }
   for (const s of spans) {
     const pk = `${s.rt}:${s.pid}`;
     const pe = byProc.get(pk);
@@ -157,19 +172,7 @@ export function summarize(files: { name: string; content: string }[]): ProfileSu
       if (e.example.length < 10 && ex.length > 10) e.example = ex;
     }
   }
-  const timed = spans.filter((s) => s.tMs !== undefined) as (Span & { tMs: number })[];
-  timed.sort((a, b) => a.tMs - b.tMs);
-  // Bash xtrace logs command starts only: a command's duration is the gap to
-  // the next command in the same process. Python/Node report their own durMs.
-  const nextByPid = new Map<number, Span & { tMs: number }>();
-  for (let i = timed.length - 1; i >= 0; i--) {
-    const s = timed[i];
-    if (s.rt === "bash" && s.durMs === undefined) {
-      const nxt = nextByPid.get(s.pid);
-      if (nxt !== undefined && nxt.tMs >= s.tMs) s.durMs = Math.round(nxt.tMs - s.tMs);
-    }
-    nextByPid.set(s.pid, s);
-  }
+  const timed = ordered as (Span & { tMs: number })[];
   const recent = timed.slice(-MAX_RECENT).map((s) => ({
     tMs: s.tMs,
     rt: s.rt,
